@@ -7,11 +7,10 @@ import matplotlib.pyplot as plt
 #讀data
 # SibSp = 手足 siblings / 配偶 spouses
 # Parch = 父母 parents / 小孩 children
-#http://bit.ly/kaggletrain
 
 @st.cache(allow_output_mutation=True)
 def load():
-	df=pd.read_csv("C:\\Users\\user80917\\Desktop\\train.csv")
+	df=pd.read_csv("http://bit.ly/kaggletrain")
 	return df
 df=load()
 
