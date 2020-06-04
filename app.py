@@ -2,106 +2,9 @@ import streamlit as st
 import pandas as pd
 import numpy as np 
 import time
-
-#讀data
-# SibSp = 手足 siblings / 配偶 spouses
-# Parch = 父母 parents / 小孩 children
-
-@st.cache(allow_output_mutation=True)
-def load():
-	df=pd.read_csv("http://bit.ly/kaggletrain")
-	return df
-df=load()
-
-dtrain=df.filter(regex='Survived|Age|SibSp|Parch|Fare|Sex|Pclass')
-
-	
-from sklearn.ensemble import RandomForestRegressor
-
-### 使用 RandomForestRegressor 填補缺失的年齡屬性
-
-def set_missing_ages(df):
-    
-    # 把已有的數值型features取出来丟進RandomForestRegressor中
-    age_df = df[['Age','Fare', 'Parch', 'SibSp', 'Pclass']]
-    
-    # 乘客分成已知年齡和未知年齡兩部分
-    known_age = age_df[age_df.Age.notnull()]
-    unknown_age = age_df[age_df.Age.isnull()]
-    
-    # y即目標年齡
-    y = known_age.iloc[:, 0]
-
-    # X即feature屬性值
-    X = known_age.iloc[:, 1:]
-    
-    # fit到RandomForestRegressor之中
-    rfr = RandomForestRegressor(random_state=0, n_estimators=2000, n_jobs=-1)
-    rfr.fit(X, y)
-    
-    # 用得到的模型進行未知年齡結果預測
-    predictedAges = rfr.predict(unknown_age.iloc[:, 1:])
-
-    # 用得到的預測結果填補原缺失data
-    df.loc[ (df.Age.isnull()), 'Age' ] = predictedAges 
-    return df,rfr
-
-dtrain, rfr = set_missing_ages(dtrain)
-
-def preprocessing(df): 
-	#familysize
-	df['Familysize']=df['Parch']+df['SibSp']
-
-	#child
-	df["Child"] = df["Age"].apply(lambda x: 1 if x < 15 else 0)
-	
-	#Mother
-	df['Mother']='0'# DataFrame增加一直行
-	df.loc[(df.Sex==str("female")) & (df.Parch>=1) ,'Mother']=1
-	return df
-dtrain=preprocessing(dtrain)
-
-#one hot encoding
-def onehot(df):
-	d_Sex=pd.get_dummies(df['Sex'],prefix='Sex')
-	d_Pclass=pd.get_dummies(df['Pclass'],prefix='Pclass')
-
-	#把處理後的新增回dtrain,df
-	df=pd.concat([df,d_Sex,d_Pclass],axis=1)
-	df.drop(['Sex','Pclass'],axis=1,inplace=True)
-	return df
-dtrain=onehot(dtrain)
-
-#對age和fare標準化至(-1,1)
+import module.titanic as modu
+from PIL import Image
 from sklearn.preprocessing import StandardScaler
-StandardScaler=StandardScaler()
-
-def scaler(df):
-	
-	age_p=StandardScaler.fit(df[['Age']].values.reshape(-1,1))
-	df['Age_sc']=StandardScaler.fit_transform(df[['Age']].values.reshape(-1,1),age_p)
-
-	fare_p=StandardScaler.fit(df[['Fare']].values.reshape(-1,1))
-	df['Fare_sc']=StandardScaler.fit_transform(df[['Fare']].values.reshape(-1,1),fare_p)
-	return df
-
-dtrain=scaler(dtrain)
-
-
-from sklearn.ensemble import RandomForestClassifier
-
-train_df=dtrain.filter(regex='Survived|Age_sc|SibSp|Parch|Familysize|Fare_sc|Sex_.*|Pclass_.*|Child|Mother')
-
-
-#y即Survival結果
-y = train_df['Survived'].values
-
-#X即features屬性值
-X = train_df.iloc[:, 1:].values
-
-rfr1 = RandomForestClassifier(n_estimators=2000,criterion='gini',min_samples_split=12,min_samples_leaf=1,random_state=1,n_jobs=-1) 
-							 
-rfr1.fit(X,y)
 
 
 #streamlit
@@ -119,6 +22,9 @@ for i in range(100):
   time.sleep(0.01)
 
 '...and now we\'re done!'
+
+image = Image.open('titanic.jpg')
+st.image(image, caption='Titanic',use_column_width=True)
 
 zero_list=(0,0,0,0,0,0,0,0,0,0)
 test_df=pd.DataFrame([zero_list],columns=['Pclass_1','Pclass_2','Pclass_3','Fare','Sex','Age','SibSp','Parch','Child','Mother'])
@@ -153,9 +59,11 @@ gender_option = st.selectbox('Please select your gender.',('Male','Female'))
 if (gender_option=='Male'):
 	test_df['Sex_male']=1
 	test_df['Sex_female']=0
+	
 else:
 	test_df['Sex_male']=0
 	test_df['Sex_female']=1
+	
 
 #Age
 Age = st.slider('How old are you?', 0, 100, 1)
@@ -167,56 +75,51 @@ test_df.loc[0,'Age']=Age
 spouse_option = st.selectbox('Are you married?',('No','Yes'))
 
 if (spouse_option=='Yes'):
-	spouse=1
+	test_df['spouse']=1
 else:
-	spouse=0
+	test_df['spouse']=0
 
 sibling = st.number_input('How many sibling do you have?',value=0,max_value=20,step=1)
-SibSp=spouse+sibling
-test_df.loc[0,'SibSp']=SibSp
+SibSp=test_df['spouse']+sibling
 
-#Parch
+#children
 children=st.number_input('How many children do you have?',value=0,max_value=20,step=1)
 st.write('The current number is ', children)
 
+#parents
 parent_option=st.selectbox('Do you want to bring your parents?',('No','Yes'))
 
 if (parent_option=='Yes'):
-	parent=2
+	test_df['parent']=2
 	
 if (parent_option=='No'):
 	parent_num=st.selectbox('Choose the number of parents that you would like to bring.',(' Ok , I will ask one of them. - 1' , 'No , I do NOT play with them! - 0' ))
 	
 	if (parent_num==' Ok , I will ask one of them. - 1'):
-		parent=1
+		test_df['parent']=1
 	else:
-		parent=0
+		test_df['parent']=0
 
-Parch=children+parent
-test_df.loc[0,'Parch']=Parch
+test_df=modu.preprocessing(test_df)
 
-test_df=preprocessing(test_df)
+#parch
+test_df['Parch']=children+test_df['parent']
 
-#fit原資料，再transform test_df的age
-age_p=StandardScaler.fit(dtrain[['Age']].values)
-test_df['Age_sc']=StandardScaler.transform(test_df[['Age']].values.reshape(-1,1),age_p)
+#mother
+if (test_df.iloc[0]['Sex_female']==1) & (test_df.iloc[0]['Parch']>0):
+	test_df['Mother']=int(1)
 
-fare_p=StandardScaler.fit(dtrain[['Fare']].values)
-test_df['Fare_sc']=StandardScaler.transform(test_df[['Fare']].values.reshape(-1,1),fare_p)
+#familysize	
+test_df['Familysize']=test_df['Parch']+test_df['SibSp']
 
-test_df.drop(['Fare','Age','Sex'],axis=1,inplace=True)
+test_df.drop(['spouse','Sex','parent'],axis=1,inplace=True)
 
+st.write("Please check your data.")
 st.write(test_df)
 
-prediction=rfr1.predict(test_df)
-prob=rfr1.predict_proba(test_df)
-prob_df=pd.DataFrame(prob,columns=['Dead','Survived'])
-dead_prob=prob_df.loc[0,'Dead']
-survived_prob=prob_df.loc[0,'Survived']
-
+prob=modu.makeprediction(test_df)
 
 #顯示生存機率
 if st.checkbox(' Show the Result ! '):
 	st.subheader('Result')
-	st.write('Your Survivability is %0.2f , Mortality is %0.2f'%(survived_prob,dead_prob))
-
+	st.write('Your Survivability is %0.2f , Mortality is %0.2f'%(prob[1],prob[0]))
